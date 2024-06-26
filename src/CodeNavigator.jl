@@ -2,10 +2,10 @@ module CodeNavigator
 
 using CSTParser
 
-export get_functions_and_calls
+export analyze_function_calls, scan_julia_files_in_directory, create_uml_diagram
 
 
-function get_functions_and_calls(filepath::String)
+function analyze_function_calls(filepath::String, include_external_functions::Bool=false)
   if !isfile(filepath)
     error("File not found: $filepath")
   end
@@ -53,7 +53,14 @@ function get_functions_and_calls(filepath::String)
     println("No functions found in the file.")
   end
 
-  filter_functions!(functions)
+  # Always remove self-references
+  for (func, calls) in functions
+    functions[func] = filter(c -> c != func, calls)
+  end
+
+  if !include_external_functions
+    filter_external_functions!(functions)
+  end
 
   return functions
 end
@@ -90,7 +97,7 @@ function get_call_name(expr)
   return nothing
 end
 
-function generate_uml(functions_and_calls::Dict{String,Vector{String}})
+function create_uml_diagram(functions_and_calls::Dict{String,Vector{String}})
   uml = ["@startuml"]
 
   # Helper function to create a valid PlantUML state name
@@ -124,24 +131,23 @@ function generate_uml(functions_and_calls::Dict{String,Vector{String}})
   return join(uml, "\n")
 end
 
-function filter_functions!(functions::Dict{String,Vector{String}})
+function filter_external_functions!(functions::Dict{String,Vector{String}})
   keys_set = Set(keys(functions))
   for (key, calls) in functions
-    filtered_calls = filter(call -> call ∈ keys_set && call != key, calls)
-    functions[key] = filtered_calls
+    functions[key] = filter(call -> call ∈ keys_set, calls)
   end
 end
 
-function scan_directory_for_julia_files(directory::String; exclude_folders::Vector{String}=String[])
+function scan_julia_files_in_directory(directory::String; exclude_folders::Vector{String}=String[])
   functions = Dict{String,Vector{String}}()
 
   for file in readdir(directory, join=true)
     if isdir(file)
       if basename(file) ∉ exclude_folders
-        merge!(functions, scan_directory_for_julia_files(file; exclude_folders=exclude_folders))
+        merge!(functions, scan_julia_files_in_directory(file; exclude_folders=exclude_folders))
       end
     elseif occursin(r"\.jl$", file)
-      merge!(functions, get_functions_and_calls(file))
+      merge!(functions, analyze_function_calls(file))
     end
   end
 
