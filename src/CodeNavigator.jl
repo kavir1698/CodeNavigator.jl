@@ -50,7 +50,7 @@ function analyze_function_calls(filepath::String, include_external_functions::Bo
   traverse(parsed)
 
   if isempty(functions)
-    println("No functions found in the file $filepath")
+    println("No functions found in $filepath")
   end
 
   # Always remove self-references
@@ -65,24 +65,31 @@ function analyze_function_calls(filepath::String, include_external_functions::Bo
   return functions
 end
 
+# TODO: it doesn't recognize some functions
 function get_function_name(expr)
-  # println("Attempting to get function name from: $(typeof(expr))")
-  # println("Expression: $expr")
-
-  if expr.args !== nothing
-    for (i, arg) in enumerate(expr.args)
-      # println("Arg $i: $(typeof(arg))")
-      if CSTParser.isidentifier(arg)
-        return arg.val
-      elseif CSTParser.iscall(arg)
-        if arg.args !== nothing && length(arg.args) > 0 && CSTParser.isidentifier(arg.args[1])
-          return arg.args[1].val
+  # Check if expr is valid
+  if expr !== nothing && hasproperty(expr, :head) && expr.head === :function
+    # Directly attempt to extract the function name from the first argument if it's an identifier
+    if hasproperty(expr, :args) && length(expr.args) > 0
+      for arg in expr.args
+        if CSTParser.isidentifier(arg)
+          return arg.val
+        elseif CSTParser.iscall(arg) && length(arg.args) > 0
+          if CSTParser.isidentifier(arg.args[1])
+            return arg.args[1].val
+          else
+            # Recursively search within nested calls
+            name = get_function_name(arg.args[1])
+            if name !== nothing
+              return name
+            end
+          end
         end
       end
     end
   end
 
-  # println("Unable to extract function name")
+  # Fallback if no name is found
   return nothing
 end
 
@@ -97,7 +104,7 @@ function get_call_name(expr)
   return nothing
 end
 
-function create_uml_diagram(functions_and_calls::Dict{String,Vector{String}})
+function create_uml_diagram(functions_and_calls::Dict{String,Vector{String}}; filepath::String="code_diagram.uml")
   uml = ["@startuml"]
 
   # Helper function to create a valid PlantUML state name
@@ -128,7 +135,14 @@ function create_uml_diagram(functions_and_calls::Dict{String,Vector{String}})
   end
 
   push!(uml, "@enduml")
+  save_uml_diagram(filepath, join(uml, "\n"))
   return join(uml, "\n")
+end
+
+function save_uml_diagram(filepath::String, uml::String)
+  open(filepath, "w") do f
+    write(f, uml)
+  end
 end
 
 function filter_external_functions!(functions::Dict{String,Vector{String}})
