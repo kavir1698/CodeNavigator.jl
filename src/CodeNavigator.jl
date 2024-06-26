@@ -12,7 +12,7 @@ function analyze_function_calls(filepath::String, include_external_functions::Bo
 
   content = read(filepath, String)
   if isempty(content)
-    println("Warning: File is empty")
+    # println("Warning: File is empty")
     return Dict{String,Vector{String}}()
   end
 
@@ -27,16 +27,16 @@ function analyze_function_calls(filepath::String, include_external_functions::Bo
       if name !== nothing
         current_function = name
         functions[current_function] = String[]
-        println("Found function: $name")
+        # println("Found function: $name")
       else
-        println("Function name not found for expression: $(typeof(expr))")
-        println("Expression details: $(expr)")
+        # println("Function name not found for expression: $(typeof(expr))")
+        # println("Expression details: $(expr)")
       end
     elseif CSTParser.iscall(expr) && current_function !== nothing
       call_name = get_call_name(expr)
       if call_name !== nothing
         push!(functions[current_function], call_name)
-        println("Found call in $current_function: $call_name")
+        # println("Found call in $current_function: $call_name")
       end
     end
 
@@ -50,7 +50,7 @@ function analyze_function_calls(filepath::String, include_external_functions::Bo
   traverse(parsed)
 
   if isempty(functions)
-    println("No functions found in the file.")
+    println("No functions found in the file $filepath")
   end
 
   # Always remove self-references
@@ -66,12 +66,12 @@ function analyze_function_calls(filepath::String, include_external_functions::Bo
 end
 
 function get_function_name(expr)
-  println("Attempting to get function name from: $(typeof(expr))")
-  println("Expression: $expr")
+  # println("Attempting to get function name from: $(typeof(expr))")
+  # println("Expression: $expr")
 
   if expr.args !== nothing
     for (i, arg) in enumerate(expr.args)
-      println("Arg $i: $(typeof(arg))")
+      # println("Arg $i: $(typeof(arg))")
       if CSTParser.isidentifier(arg)
         return arg.val
       elseif CSTParser.iscall(arg)
@@ -82,7 +82,7 @@ function get_function_name(expr)
     end
   end
 
-  println("Unable to extract function name")
+  # println("Unable to extract function name")
   return nothing
 end
 
@@ -138,16 +138,16 @@ function filter_external_functions!(functions::Dict{String,Vector{String}})
   end
 end
 
-function scan_julia_files_in_directory(directory::String; exclude_folders::Vector{String}=String[])
+function scan_julia_files_in_directory(directory::String; exclude_folders::Vector{String}=String[], include_external_functions::Bool=false)
   functions = Dict{String,Vector{String}}()
 
   for file in readdir(directory, join=true)
     if isdir(file)
       if basename(file) ∉ exclude_folders
-        merge!(functions, scan_julia_files_in_directory(file; exclude_folders=exclude_folders))
+        merge!(functions, scan_julia_files_in_directory(file; exclude_folders=exclude_folders, include_external_functions=include_external_functions))
       end
     elseif occursin(r"\.jl$", file)
-      merge!(functions, analyze_function_calls(file))
+      merge!(functions, analyze_function_calls(file, include_external_functions))
     end
   end
 
