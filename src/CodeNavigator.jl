@@ -6,7 +6,7 @@ using JSON
 export analyze_function_calls, scan_julia_files_in_directory, create_uml_diagram
 
 
-function analyze_function_calls(filepath::String, include_external_functions::Bool=false)
+function analyze_function_calls(filepath::String)
   if !isfile(filepath)
     error("File not found: $filepath")
   end
@@ -59,14 +59,9 @@ function analyze_function_calls(filepath::String, include_external_functions::Bo
     functions[func] = filter(c -> c != func, calls)
   end
 
-  if !include_external_functions
-    filter_external_functions!(functions)
-  end
-
   return functions
 end
 
-# TODO: it doesn't recognize some functions
 function get_function_name(expr)
   # Check if expr is valid
   if expr !== nothing && hasproperty(expr, :head) && expr.head === :function
@@ -85,12 +80,56 @@ function get_function_name(expr)
               return name
             end
           end
+        elseif CSTParser.isexpr(arg, :block)
+          for subexpr in arg.args
+            if CSTParser.defines_function(subexpr)
+              name = get_function_name(subexpr)
+              if name !== nothing
+                return name
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  # Recursively search for inline function definitions
+  if expr !== nothing && hasproperty(expr, :args) && expr.args !== nothing # Check if expr.args is not nothing
+    for arg in expr.args
+      name = get_function_name(arg)
+      if name !== nothing
+        return name
+      end
+    end
+  end
+
+  if (expr !== nothing &&
+      hasproperty(expr, :args) &&
+      expr.args !== nothing &&  # Check if expr.args is not nothing
+      hasproperty(expr.args[1], :args) &&
+      expr.args[1].args !== nothing && # Check if expr.args[1].args is not nothing
+      length(expr.args[1].args) == 2 &&
+      CSTParser.iscall(expr.args[1].args[1]))
+
+    lhs = expr.args[1].args[1]
+    if length(lhs.args) > 0 && CSTParser.isidentifier(lhs.args[1])
+      return lhs.args[1].val
+    end
+  end
+  
+  # Handle inline function definitions (with or without docstrings):
+  if expr !== nothing && hasproperty(expr, :args) && expr.args !== nothing
+    # Find the assignment expression (=)
+    for arg in expr.args
+      if hasproperty(arg, :head) && hasproperty(arg.head, :val) && arg.head.val == "="
+        lhs = arg.args[1]  # Left-hand side of the assignment
+        if CSTParser.iscall(lhs) && length(lhs.args) > 0 && CSTParser.isidentifier(lhs.args[1])
+          return lhs.args[1].val
         end
       end
     end
   end
 
-  # Fallback if no name is found
   return nothing
 end
 
@@ -205,11 +244,15 @@ function scan_julia_files_in_directory(directory::String; exclude_folders::Vecto
   for file in readdir(directory, join=true)
     if isdir(file)
       if basename(file) ∉ exclude_folders
-        merge!(functions, scan_julia_files_in_directory(file; exclude_folders=exclude_folders, include_external_functions=include_external_functions))
+        merge!(functions, scan_julia_files_in_directory(file; exclude_folders=exclude_folders, include_external_functions=true))
       end
     elseif occursin(r"\.jl$", file)
-      merge!(functions, analyze_function_calls(file, include_external_functions))
+      merge!(functions, analyze_function_calls(file))
     end
+  end
+
+  if !include_external_functions
+    filter_external_functions!(functions)
   end
 
   # save functions to file
