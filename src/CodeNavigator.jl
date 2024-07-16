@@ -63,69 +63,36 @@ function analyze_function_calls(filepath::String)
 end
 
 function get_function_name(expr)
-  # Check if expr is valid
-  if expr !== nothing && hasproperty(expr, :head) && expr.head === :function
-    # Directly attempt to extract the function name from the first argument if it's an identifier
-    if hasproperty(expr, :args) && length(expr.args) > 0
-      for arg in expr.args
-        if CSTParser.isidentifier(arg)
-          return arg.val
-        elseif CSTParser.iscall(arg) && length(arg.args) > 0
-          if CSTParser.isidentifier(arg.args[1])
-            return arg.args[1].val
-          else
-            # Recursively search within nested calls
-            name = get_function_name(arg.args[1])
-            if name !== nothing
-              return name
-            end
-          end
-        elseif CSTParser.isexpr(arg, :block)
-          for subexpr in arg.args
-            if CSTParser.defines_function(subexpr)
-              name = get_function_name(subexpr)
-              if name !== nothing
-                return name
-              end
-            end
-          end
-        end
-      end
-    end
-  end
-  # Recursively search for inline function definitions
-  if expr !== nothing && hasproperty(expr, :args) && expr.args !== nothing # Check if expr.args is not nothing
-    for arg in expr.args
-      name = get_function_name(arg)
-      if name !== nothing
-        return name
-      end
-    end
+  # Check if expr is valid and has the necessary properties
+  if expr === nothing || !hasproperty(expr, :args) || expr.args === nothing
+    return nothing
   end
 
-  if (expr !== nothing &&
-      hasproperty(expr, :args) &&
-      expr.args !== nothing &&  # Check if expr.args is not nothing
-      hasproperty(expr.args[1], :args) &&
-      expr.args[1].args !== nothing && # Check if expr.args[1].args is not nothing
-      length(expr.args[1].args) == 2 &&
-      CSTParser.iscall(expr.args[1].args[1]))
+  # Check for the specific structure we're dealing with
+  if length(expr.args) >= 2 &&
+     hasproperty(expr.args[1], :head) &&
+     expr.args[1].head === :call
 
-    lhs = expr.args[1].args[1]
+    lhs = expr.args[1]  # The function call on the left-hand side of the assignment
     if length(lhs.args) > 0 && CSTParser.isidentifier(lhs.args[1])
       return lhs.args[1].val
     end
   end
-  
+
+  # If not found, recursively search through the args
+  for arg in expr.args
+    name = get_function_name(arg)
+    if name !== nothing
+      return name
+    end
+  end
+
   # Handle inline function definitions (with or without docstrings):
-  if expr !== nothing && hasproperty(expr, :args) && expr.args !== nothing
-    # Find the assignment expression (=)
-    for arg in expr.args
-      if hasproperty(arg, :head) && hasproperty(arg.head, :val) && arg.head.val == "="
-        lhs = arg.args[1]  # Left-hand side of the assignment
-        if CSTParser.iscall(lhs) && length(lhs.args) > 0 && CSTParser.isidentifier(lhs.args[1])
-          return lhs.args[1].val
-        end
+  for arg in expr.args
+    if hasproperty(arg, :head) && hasproperty(arg.head, :val) && arg.head.val == "="
+      lhs = arg.args[1]  # Left-hand side of the assignment
+      if CSTParser.iscall(lhs) && length(lhs.args) > 0 && CSTParser.isidentifier(lhs.args[1])
+        return lhs.args[1].val
       end
     end
   end
