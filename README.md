@@ -1,6 +1,8 @@
 Code Navigator
 ===============
 
+NOTE: work in progress. There are bugs.
+
 This package is a tool for analyzing and visualizing Julia code. It provides a way to scan Julia files in a directory, analyze function calls, and create a UML diagram to visualize the relationships between functions. This is a static call graph.
 
 This is useful for understanding the structure and dependencies of your Julia codebase. It can help developers identify complex relationships between functions, detect potential issues, and improve code organization.
