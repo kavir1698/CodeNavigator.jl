@@ -5,7 +5,6 @@ using JSON
 
 export analyze_function_calls, scan_julia_files_in_directory, create_uml_diagram
 
-# TODO: remove duplicate values
 # TODO: handle function broadcasts f.()
 # TODO: remove dot . from broadcasted functions
 function analyze_function_calls(filepath::String)
@@ -63,6 +62,11 @@ function analyze_function_calls(filepath::String)
   # Always remove self-references
   for (func, calls) in functions
     functions[func] = filter(c -> c != func, calls)
+  end
+
+  # Remove duplicates in calls
+  for (func, calls) in functions
+    functions[func] = unique(calls)
   end
 
   return functions
