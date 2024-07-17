@@ -5,7 +5,9 @@ using JSON
 
 export analyze_function_calls, scan_julia_files_in_directory, create_uml_diagram
 
-
+# TODO: remove duplicate values
+# TODO: handle function broadcasts f.()
+# TODO: remove dot . from broadcasted functions
 function analyze_function_calls(filepath::String)
   if !isfile(filepath)
     error("File not found: $filepath")
