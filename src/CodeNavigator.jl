@@ -205,7 +205,9 @@ function filter_external_functions!(functions::Dict{String,Vector{String}})
   end
 end
 
-function scan_julia_files_in_directory(directory::String; exclude_folders::Vector{String}=String[], include_external_functions::Bool=false)
+function scan_julia_files_in_directory(directory::String; exclude_folders::Vector{String}=String[], include_external_functions::Bool=false,
+  save_to_file::Bool=false,
+  create_diagram::Bool=false)
   functions = Dict{String,Vector{String}}()
 
   for file in readdir(directory, join=true)
@@ -222,13 +224,15 @@ function scan_julia_files_in_directory(directory::String; exclude_folders::Vecto
     filter_external_functions!(functions)
   end
 
-  # save functions to file
-  open("functions.json", "w") do f
-    JSON.print(f, functions)
+  if save_to_file
+    open("functions.json", "w") do f
+      JSON.print(f, functions)
+    end
   end
 
-  # create uml diagram
-  create_uml_diagram(functions, filepath="code_diagram.uml")
+  if create_diagram
+    create_uml_diagram(functions, filepath="code_diagram.uml")
+  end
 
   return functions
 end
