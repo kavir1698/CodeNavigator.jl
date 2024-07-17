@@ -27,7 +27,11 @@ function analyze_function_calls(filepath::String)
       name = get_function_name(expr)
       if name !== nothing
         current_function = name
-        functions[current_function] = String[]
+        if haskey(functions, current_function)
+          functions[current_function] = vcat(functions[current_function], String[])  # Append to existing calls
+        else
+          functions[current_function] = String[]  # Create new list of calls
+        end
         # println("Found function: $name")
       else
         # println("Function name not found for expression: $(typeof(expr))")
