@@ -64,24 +64,10 @@ function get_func_calls(code_content, target_function, config)
     List ALL function calls that occur ONLY WITHIN the target function's body.
     Exclude calls from outside the target function's scope.
 
-    INCLUDE (if in target function):
-    • Regular calls: foo()
-    • Method calls: obj.method() 
-    • Built-ins: print()
-    • Nested calls: foo(bar())
-    • Operator calls: +(a,b)
-    • Chained: foo().bar()
-
-    EXCLUDE:
-    • Macros: @macro
-    • Constructors: Type()
-    • Function definitions
-    • Function references: map(func)
-    • Any calls outside target function
-
     OUTPUT:
     Return only comma-separated function names without spaces/quotes/brackets.
     Example: fib,readline,parse,sum
+    If there is only one function call, return it as a single name without commas. If there are no calls, return an empty string.
     """
 
   prompt = [
@@ -192,6 +178,7 @@ function get_function_dict(filepath::String)
       @warn "Failed to analyze function calls for $target_function"
     else
       # parse the response into a list of function names
+      response = AT.last_output(call_names)
       call_names = split(response, ",")
       call_names = [strip(f) for f in call_names]
       call_names = unique(call_names)
