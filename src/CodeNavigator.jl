@@ -1,7 +1,8 @@
 module CodeNavigator
 
-export analyze_function_calls, scan_julia_files_in_directory, create_uml_diagram
+export get_function_dict, scan_julia_files_in_directory, create_uml_diagram
 export get_ai_config, configure_ai
+export get_func_names, get_func_definition
 
 using PromptingTools
 using PromptingTools.Experimental.AgentTools
@@ -15,7 +16,7 @@ AT = PromptingTools.Experimental.AgentTools
 include("create_diagram.jl")
 include("aiconfig.jl")
 
-function get_func_defs(code_content::String, config)
+function get_func_names(code_content::String, config)
 
   ptext = """
   Extract all function names defined in the provided code and return them as a single comma-separated list.
@@ -154,6 +155,38 @@ function get_called_functions(code_content, target_function, config)
   return call_names
 end
 
+function get_func_definition(code_content::String, target_function::AbstractString, config)
+  ptext = """
+  Extract the complete function definition(s) for the specified target function from the provided code.
+  Include all method definitions if there are multiple.
+  
+  Rules:
+  1. Return only the function definition(s), including the body
+  2. Exclude any docstrings or comments
+  3. Preserve exact indentation
+  4. If multiple method definitions exist, include all of them
+  
+  Output format: Return only the raw function definition(s), no additional text or formatting.
+  """
+
+  prompt = [
+    PT.SystemMessage(ptext),
+    PT.UserMessage("""
+    Function to extract: `$target_function`
+    
+    Code contents:
+    ```julia
+    $code_content
+    ```
+    """)
+  ]
+
+  analysis_call = AT.AIGenerate(config.schema, prompt; config.base_config...)
+  result = AT.run!(analysis_call)
+  
+  return AT.last_output(result)
+end
+
 function get_function_dict(filepath::String)
   if !isfile(filepath)
     error("File not found: $filepath")
@@ -161,19 +194,17 @@ function get_function_dict(filepath::String)
 
   content = read(filepath, String)
   if isempty(content)
-    # println("Warning: File is empty")
     return Dict{String,Vector{String}}()
   end
 
   @info "Analyzing function calls in $filepath"
   config = get_ai_config()
-  output = get_func_defs(content, config)
+  output = get_func_names(content, config)
   response = AT.last_output(output)
   if isempty(response)
     println("No functions found in $filepath")
   end
 
-  # parse the response into a list of function names
   function_names = split(response, ",")
   function_names = [strip(f) for f in function_names]
   function_names = unique(function_names)
@@ -182,16 +213,24 @@ function get_function_dict(filepath::String)
   for function_name in function_names
     function_dict[function_name] = []
   end
+  
   for target_function in function_names
     @info "Analyzing function calls in $target_function"
-    call_names = get_func_calls(content, target_function, config)
-    if typeof(call_names) <: PromptingTools.Experimental.AgentTools.AICall
+    # First get the function definition
+    func_def = get_func_definition(content, target_function, config)
+    # Then analyze calls within this definition
+    call_names = get_func_calls(func_def, target_function, config)
+    if !call_names.success
       # try again
-      call_names = get_func_calls(content, target_function, config)
+      call_names = get_func_calls(func_def, target_function, config)
     end
-    if typeof(call_names) <: PromptingTools.Experimental.AgentTools.AICall
+    if !call_names.success
       @warn "Failed to analyze function calls for $target_function"
     else
+      # parse the response into a list of function names
+      call_names = split(response, ",")
+      call_names = [strip(f) for f in call_names]
+      call_names = unique(call_names)
       function_dict[target_function] = call_names
     end
   end
