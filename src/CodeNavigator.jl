@@ -58,67 +58,30 @@ end
 function get_func_calls(code_content, target_function, config)
 
   ptext = """
-    You are a code analysis assistant specialized in identifying function calls within function definitions.
+    You are a code analyzer that finds function calls within function definitions.
 
     TASK:
-    Find ALL function calls that appear ONLY WITHIN THE BODY of the specified target function.
-    DO NOT include calls from other functions or the global scope.
+    List ALL function calls that occur ONLY WITHIN the target function's body.
+    Exclude calls from outside the target function's scope.
 
-    ANALYSIS STEPS:
-    1. First locate the target function's definition(s)
-    2. Identify its body (code between the function definition and end)
-    3. Only analyze calls within this specific scope
-    4. List all function calls found within this scope
-
-    SCOPE RULES:
-    ✓ ONLY analyze code inside the target function's body
-    ✗ IGNORE all code outside the target function
-    ✗ IGNORE calls in other functions even if nested within target function
-    ✗ IGNORE calls in the global scope
-
-
-    INCLUDE these types of calls (if within target function):
-    • Direct function calls: foo()
-    • Method calls: obj.method()
-    • Built-in function calls: print()
-    • Nested function calls: foo(bar())
-    • Operator calls when used as functions: +(a,b)
-    • Chained calls: foo().bar()
+    INCLUDE (if in target function):
+    • Regular calls: foo()
+    • Method calls: obj.method() 
+    • Built-ins: print()
+    • Nested calls: foo(bar())
+    • Operator calls: +(a,b)
+    • Chained: foo().bar()
 
     EXCLUDE:
-    • Macro calls: @macro
-    • Type constructors: MyType()
+    • Macros: @macro
+    • Constructors: Type()
     • Function definitions
-    • Function references without calls: map(func)
-    • Any calls outside the target function's body
+    • Function references: map(func)
+    • Any calls outside target function
 
-    OUTPUT FORMAT:
-    • Return ONLY a comma-separated list of function names
-    • No spaces after commas
-    • No quotes, brackets, or other delimiters
-    • No explanatory text
-    • Example valid output: fib,readline,parse,vector_sum
-
-
-    Example:
-    ```julia
-    function other_func()
-        helper()  # IGNORE - outside target
-    end
-
-    function target_func()
-        foo("hello")  # INCLUDE - foo
-        x = helper()    # INCLUDE - helper
-        if true
-            foo(bar()) # INCLUDE - foo,bar
-        end
-    end
-
-    sqrt(16)  # IGNORE - outside target
-    ```
-    For target_func, output would be: foo,helper,foo,bar
-
-    Note: Return ONLY the comma-separated list, with no spaces after commas, no quotes, no additional text or formatting.
+    OUTPUT:
+    Return only comma-separated function names without spaces/quotes/brackets.
+    Example: fib,readline,parse,sum
     """
 
   prompt = [
@@ -139,7 +102,7 @@ function get_func_calls(code_content, target_function, config)
   # check if the result has any explanations other than the function names
   AT.airetry!(x -> !isempty(AT.last_output(x)) && !occursin(":", AT.last_output(x)) && !occursin(".", AT.last_output(x)),
     result,
-    "The result should only contain function names separated by commas")
+    "The result should only contain function names separated by commas without any additional text and explanations!")
 
 
   return result
@@ -222,6 +185,7 @@ function get_function_dict(filepath::String)
     call_names = get_func_calls(func_def, target_function, config)
     if !call_names.success
       # try again
+      func_def = get_func_definition(content, target_function, config)
       call_names = get_func_calls(func_def, target_function, config)
     end
     if !call_names.success
