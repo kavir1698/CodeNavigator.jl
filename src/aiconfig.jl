@@ -31,7 +31,7 @@ function configure_ai(file_path::String)
   base_config = (
     model=model,
     api_key=api_key,
-    config=RetryConfig(catch_errors=true, max_retries=5)
+    config=RetryConfig(catch_errors=true, max_retries=5, max_calls=10000),
   )
   global_config[] = AIConfig(base_url, model, api_key, schema, base_config)
 end

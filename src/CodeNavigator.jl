@@ -86,10 +86,9 @@ function get_func_calls(code_content, target_function, config)
   result = AT.run!(analysis_call)
 
   # check if the result has any explanations other than the function names
-  AT.airetry!(x -> !isempty(AT.last_output(x)) && !occursin(":", AT.last_output(x)) && !occursin(".", AT.last_output(x)),
+  AT.airetry!(x -> !isempty(AT.last_output(x)) && !occursin(":", AT.last_output(x)) && !occursin(". ", AT.last_output(x)) && !occursin(";", AT.last_output(x)) && !occursin(r"\.\s*$", AT.last_output(x)),
     result,
     "The result should only contain function names separated by commas without any additional text and explanations!")
-
 
   return result
 end
@@ -146,7 +145,7 @@ function get_function_dict(filepath::String)
     return Dict{String,Vector{String}}()
   end
 
-  @info "Analyzing function calls in $filepath"
+  @info "Finding function definitions in $filepath"
   config = get_ai_config()
   output = get_func_names(content, config)
   response = AT.last_output(output)
