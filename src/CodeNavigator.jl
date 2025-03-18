@@ -113,24 +113,43 @@ end
 
 function get_func_definition(code_content::String, target_function::AbstractString, config)
   ptext = """
-  Extract the complete function definition(s) for the specified target function from the provided code.
-  Include all method definitions if there are multiple.
-  
-  Rules:
-  1. Return only the function definition(s), including the body
-  2. Exclude any docstrings or comments
-  3. Preserve exact indentation
-  4. If multiple method definitions exist, include all of them
-  
-  Output format: Return only the raw function definition(s), no additional text or formatting.
-  """
+    You are an AI tasked with extracting the function definition of a given function in Julia code. You respond only with Julia code. You do not write any explanations or comments.
+    Your response
+      + Start with ```julia
+      + End with ```
+      + Contain **only** the function definition(s), without additional text.
+    """
 
   prompt = [
     PT.SystemMessage(ptext),
     PT.UserMessage("""
-    Function to extract: `$target_function`
-    
-    Code contents:
+
+    Extract and print the definition(s) and body of the function `$target_function` from the given Julia code snippet below.
+
+    **Requirements:**
+
+    1. **Exact Match**: Return only the complete function definition(s) starting with:
+      * `function $target_function`
+      * `$target_function(args) =`
+    2. **Full Body Inclusion**: Include the entire function body, ensuring the `end` keyword is present if applicable.
+    3. **Code Integrity**: Do not modify the extracted code in any manner.
+    4. **Contextual Isolation**: Exclude surrounding code and comments.
+    5. **Multiple Definitions Handling**: If multiple method definitions exist for `$target_function`, include all of them.
+    6. **Non-Existence Response**: If `$target_function` is not found, return an empty string.
+
+    **Example Response Structure (if function is found):**
+    ```julia
+    function $target_function(args) =...
+    ... function body...
+    end
+
+    # If multiple definitions exist
+    $target_function(args) =...
+    ... another function body...
+    end
+    ```
+
+    Code snippet:
     ```julia
     $code_content
     ```
@@ -139,6 +158,14 @@ function get_func_definition(code_content::String, target_function::AbstractStri
 
   analysis_call = AT.AIGenerate(config.schema, prompt; config.base_config...)
   result = AT.run!(analysis_call)
+    
+  # Validate the output:
+  # 1. Must contain the target function name
+  # 2. Must start with ``` and end with ```
+  # 3. Must be valid Julia syntax
+  AT.airetry!(x -> !isempty(AT.last_output(x)) && occursin(target_function, AT.last_output(x)) && startswith(strip(AT.last_output(x)), "```") && endswith(strip(AT.last_output(x)), "```") ,
+    result,
+    "You response should contain the function definition without any additional text and explanations! It should be between ```julia and ```")
   
   return AT.last_output(result)
 end
