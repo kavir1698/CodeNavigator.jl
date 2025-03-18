@@ -2,7 +2,7 @@ module CodeNavigator
 
 export get_function_dict, scan_julia_files_in_directory, create_uml_diagram
 export get_ai_config, configure_ai
-export get_func_names, get_func_definition
+export get_func_names, get_func_definition, get_func_calls
 
 using PromptingTools
 using PromptingTools.Experimental.AgentTools
@@ -19,23 +19,22 @@ include("aiconfig.jl")
 function get_func_names(code_content::String, config)
 
   ptext = """
-  Extract all function names defined in the provided code and return them as a single comma-separated list.
+  Extract all function names defined in the provided Julia code.
 
-    Rules:
-    1. Include:
-      - Standard function definitions
-      - Compact function definitions
-      - Method overloads (list base name only once)
-      
-      2. Exclude:
-      - Anonymous functions
-      - Macro names
-      - Function names from imports/using statements
-      - Type constructors
+  Include these patterns:
+  1. Standard definitions: `function name(args) ... end`
+  2. Compact definitions: `name(args) = ...`
+  3. Type methods: `function Type.name(args) ... end`
+  4. Exported functions in `export` statements
+  5. Nested function definitions
+  
+  Exclude:
+  1. Anonymous functions like `x -> x + 1`
+  2. Imported function names from `using` or `import`
+  3. Type constructors
+  4. Macro definitions (@macro)
 
-    Output format: name1,name2,name3
-
-    Note: Return ONLY the comma-separated list, with no spaces after commas, no quotes, no additional text or formatting.
+  Return: Just function names separated by commas without spaces (name1,name2,name3)
   """
 
   prompt = [
@@ -47,7 +46,7 @@ function get_func_names(code_content::String, config)
   result = AT.run!(analysis_call)
 
   # check if the result has any explanations other than the function names
-  AT.airetry!(x -> !isempty(AT.last_output(x)) && !occursin(":", AT.last_output(x)) && !occursin(".", AT.last_output(x)),
+  AT.airetry!(x -> !isempty(AT.last_output(x)) && !occursin(":", AT.last_output(x)) && !occursin(". ", AT.last_output(x)) && !occursin(r"\.\s*$", AT.last_output(x)),
     result,
     "The result should only contain function names separated by commas")
 
@@ -58,17 +57,26 @@ end
 function get_func_calls(code_content, target_function, config)
 
   ptext = """
-    You are a code analyzer that finds function calls within function definitions.
+  Find all function calls within a Julia function definition.
 
-    TASK:
-    List ALL function calls that occur ONLY WITHIN the target function's body.
-    Exclude calls from outside the target function's scope.
+  Look for these patterns:
+  1. Direct calls: `funcname(args)`
+  2. Method calls: `object.funcname(args)`
+  3. Nested calls: `outer(inner(args))`
+  4. Broadcast calls: `funcname.(args)`
+  5. Operator calls like push!, pop!, etc
+  
+  Rules:
+  1. Only analyze calls INSIDE the target function body
+  2. Include standard library function calls
+  3. Exclude:
+     - Type constructors
+     - Macro calls (@macro)
+     - The target function's own name
+     - String literals containing parentheses
 
-    OUTPUT:
-    Return only comma-separated function names without spaces/quotes/brackets.
-    Example: fib,readline,parse,sum
-    If there is only one function call, return it as a single name without commas. If there are no calls, return an empty string.
-    """
+  Return: Just function names separated by commas without spaces (name1,name2,name3)
+  """
 
   prompt = [
     PT.SystemMessage(ptext),
