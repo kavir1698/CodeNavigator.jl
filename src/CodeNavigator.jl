@@ -195,9 +195,41 @@ function filter_external_functions!(functions::Dict{String,Vector{String}})
   end
 end
 
-function scan_julia_files_in_directory(directory::String; exclude_folders::Vector{String}=String[], include_external_functions::Bool=false,
-  save_to_file::Bool=false,
-  create_diagram::Bool=false)
+"""
+    scan_julia_files_in_directory(directory::String; 
+        exclude_folders::Vector{String}=String[],
+        include_external_functions::Bool=true,
+        save_to_file::Bool=true,
+        create_diagram::Bool=true,
+        exclude_files::Vector{String}=String[]) -> Dict{String,Vector{String}}
+
+Recursively scan a directory for Julia files and analyze function calls within them.
+
+# Arguments
+- `directory::String`: The root directory to start scanning from
+- `exclude_folders::Vector{String}`: List of folder names to skip during scanning
+- `include_external_functions::Bool`: If false, only keep function calls that are defined within the scanned files
+- `save_to_file::Bool`: If true, save the results to "functions.json"
+- `create_diagram::Bool`: If true, create a UML diagram of the function calls
+- `exclude_files::Vector{String}`: List of file names to skip during scanning
+
+# Returns
+A dictionary mapping function names to vectors of function names they call.
+
+# Example
+```julia
+# Scan all Julia files in current directory
+funcs = scan_julia_files_in_directory(".")
+
+# Scan with exclusions
+funcs = scan_julia_files_in_directory("src", 
+    exclude_folders=["test", "docs"],
+    include_external_functions=false)
+```
+"""
+function scan_julia_files_in_directory(directory::String; exclude_folders::Vector{String}=String[], include_external_functions::Bool=true,
+  save_to_file::Bool=true,
+  create_diagram::Bool=true, exclude_files::Vector{String}=String[])
   functions = Dict{String,Vector{String}}()
 
   for file in readdir(directory, join=true)
@@ -205,7 +237,7 @@ function scan_julia_files_in_directory(directory::String; exclude_folders::Vecto
       if basename(file) ∉ exclude_folders
         merge!(functions, scan_julia_files_in_directory(file; exclude_folders=exclude_folders, include_external_functions=true))
       end
-    elseif occursin(r"\.jl$", file)
+    elseif occursin(r"\.jl$", file) && basename(file) ∉ exclude_files
       merge!(functions, get_function_dict(file))
     end
   end
