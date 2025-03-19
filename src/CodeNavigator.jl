@@ -68,8 +68,7 @@ function get_func_calls(code_content, target_function, config)
   
   Rules:
   1. Only analyze calls INSIDE the target function body
-  2. Include standard library function calls
-  3. Exclude:
+  2. Exclude:
      - Type constructors
      - Macro calls (@macro)
      - The target function's own name
@@ -81,9 +80,10 @@ function get_func_calls(code_content, target_function, config)
   prompt = [
     PT.SystemMessage(ptext),
     PT.UserMessage("""
-    Function to analyze: `$target_function`
+    List the functions called within: `$target_function`.
+    Follow the rules strictly.
 
-    Code contents:
+    **Code snippet:**
     ```julia
     $code_content
     ```
