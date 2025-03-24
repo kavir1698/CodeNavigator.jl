@@ -9,7 +9,6 @@ using Glob
 using JuliaSyntax
 
 include("create_diagram.jl")
-include("aiconfig.jl")
 
 function get_function_definitions(node)
   functions = String[]
@@ -46,6 +45,21 @@ function get_function_calls(node)
       # Get the function name from the first argument
       fname = string(node.args[1])
       push!(calls, fname)
+    elseif node.head == :(=) && length(node.args) == 2
+      # Handle both sides of assignment
+      if node.args[1] isa Expr && node.args[1].head == :call
+        # Handle inline function definition
+        rhs = node.args[2]
+        if rhs isa Expr
+          # Process the entire right-hand side for function calls
+          append!(calls, get_function_calls(rhs))
+        else
+          # Handle case where RHS is a direct function call (e.g., f = g)
+          push!(calls, string(rhs))
+        end
+      end
+      # Also check the left-hand side for any nested calls
+      append!(calls, get_function_calls(node.args[1]))
     end
 
     # Recursively search in all arguments
@@ -57,14 +71,17 @@ function get_function_calls(node)
   return unique(calls)
 end
 
-
 function find_function_node(node, target_name)
   if node isa Expr
-    if node.head == :function
-      current_fname = if node.args[1] isa Expr
-        string(node.args[1].args[1])
+    if node.head == :function || (node.head == :(=) && length(node.args) == 2 && node.args[1] isa Expr && node.args[1].head == :call)
+      current_fname = if node.head == :function
+        if node.args[1] isa Expr
+          string(node.args[1].args[1])
+        else
+          string(node.args[1])
+        end
       else
-        string(node.args[1])
+        string(node.args[1].args[1])  # For inline function case
       end
 
       if current_fname == target_name
@@ -116,7 +133,13 @@ function get_function_dict(filepath::String)
   for func_name in function_names
       func_node = find_function_node(expr, func_name)
       if func_node !== nothing
-          for call in get_function_calls(func_node.args[2])
+          # Handle both regular and inline function definitions
+          body = if func_node.head == :function
+              func_node.args[2]
+          else  # inline function case
+              func_node.args[2]
+          end
+          for call in get_function_calls(body)
               function_dict[func_name] = [function_dict[func_name]..., call]
           end
       end
