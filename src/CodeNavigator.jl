@@ -1,14 +1,12 @@
 module CodeNavigator
 
-export get_function_dict, scan_julia_files_in_directory, create_uml_diagram
-export get_ai_config, configure_ai
-export get_func_names, get_func_definition, get_func_calls
+export get_function_dict, scan_julia_files_in_directory, create_uml_diagram, scan_julia_file
+export get_function_definitions, get_function_calls, scan_julia_file
 
-using PromptingTools
-using PromptingTools.Experimental.AgentTools
 using JSON
 using YAML
 using Glob
+using JuliaSyntax
 
 PT = PromptingTools
 AT = PromptingTools.Experimental.AgentTools
@@ -16,157 +14,74 @@ AT = PromptingTools.Experimental.AgentTools
 include("create_diagram.jl")
 include("aiconfig.jl")
 
-function get_func_names(code_content::String, config)
+function get_function_definitions(node)
+  functions = String[]
 
-  ptext = """
-  Extract all function names defined in the provided Julia code.
-
-  Include these patterns:
-  1. Standard definitions: `function name(args) ... end`
-  2. Compact definitions: `name(args) = ...`
-  3. Type methods: `function Type.name(args) ... end`
-  4. Exported functions in `export` statements
-  5. Nested function definitions
-  
-  Exclude:
-  1. Anonymous functions like `x -> x + 1`
-  2. Imported function names from `using` or `import`
-  3. Type constructors
-  4. Macro definitions (@macro)
-
-  Return: Just function names separated by commas without spaces (name1,name2,name3)
-  """
-
-  prompt = [
-    PT.SystemMessage(ptext),
-    PT.UserMessage("Code contents:\n```julia\n$code_content\n```")
-  ]
-
-  analysis_call = AT.AIGenerate(config.schema, prompt; config.base_config...)
-  result = AT.run!(analysis_call)
-
-  # check if the result has any explanations other than the function names
-  AT.airetry!(x -> !isempty(AT.last_output(x)) && !occursin(":", AT.last_output(x)) && !occursin(". ", AT.last_output(x)) && !occursin(r"\.\s*$", AT.last_output(x)),
-    result,
-    "The result should only contain function names separated by commas")
-
-
-  return result
-end
-
-function get_func_calls(code_content, target_function, config)
-
-  ptext = """
-  Find all function calls within a Julia function definition.
-
-  Look for these patterns:
-  1. Direct calls: `funcname(args)`
-  2. Method calls: `object.funcname(args)`
-  3. Nested calls: `outer(inner(args))`
-  4. Broadcast calls: `funcname.(args)`
-  5. Operator calls like push!, pop!, etc
-  
-  Rules:
-  1. Only analyze calls INSIDE the target function body
-  2. Exclude:
-     - Type constructors
-     - Macro calls (@macro)
-     - The target function's own name
-     - String literals containing parentheses
-
-  Return: Just function names separated by commas without spaces (name1,name2,name3)
-  """
-
-  prompt = [
-    PT.SystemMessage(ptext),
-    PT.UserMessage("""
-    List the functions called within: `$target_function`.
-    Follow the rules strictly.
-
-    **Code snippet:**
-    ```julia
-    $code_content
-    ```
-    """)
-  ]
-
-  analysis_call = AT.AIGenerate(config.schema, prompt; config.base_config...)
-  result = AT.run!(analysis_call)
-
-  # check if the result has any explanations other than the function names
-  AT.airetry!(x -> !isempty(AT.last_output(x)) && !occursin(":", AT.last_output(x)) && !occursin(". ", AT.last_output(x)) && !occursin(";", AT.last_output(x)) && !occursin(r"\.\s*$", AT.last_output(x)),
-    result,
-    "The result should only contain function names separated by commas without any additional text and explanations!")
-
-  return result
-end
-
-function get_called_functions(code_content, target_function, config)
-  output = get_func_calls(code_content, target_function, config)
-  response = AT.last_output(output)
-  # parse the response into a list of function names
-  call_names = split(response, ",")
-  call_names = [strip(f) for f in call_names]
-  call_names = unique(call_names)
-  return call_names
-end
-
-function get_func_definition(code_content::String, target_function::AbstractString, config)
-  ptext = """
-    You are an AI tasked with extracting the exact function definition(s) of a given function from Julia code. Your response must:
-      1. Start with ```julia
-      2. End with ```
-      3. Contain **only** the function definition(s) of `$target_function`, without any additional text, comments, explanations, or modifications.
-      4. If the function `$target_function` is not found, return an empty string.
-
-    **Rules:**
-      - Do not describe the code.
-      - Do not suggest improvements.
-      - Do not create new functions.
-      - Do not include any comments or explanations.
-      - Do not modify the extracted code in any way.
-      - If multiple definitions of `$target_function` exist, include all of them.
-  """
-
-  prompt = [
-    PT.SystemMessage(ptext),
-    PT.UserMessage("""
-    Extract the exact function definition(s) of `$target_function` from the following Julia code snippet. Follow the rules strictly.
-
-    **Code snippet:**
-    ```julia
-    $code_content
-    ```
-
-    **Response format:**
-    ```julia
-    function $target_function(args) =...
-    ... function body...
+  if node isa Expr
+    if node.head == :function
+      # Get function name from the first argument
+      fname = if node.args[1] isa Expr
+        string(node.args[1].args[1])
+      else
+        string(node.args[1])
+      end
+      push!(functions, fname)
     end
 
-    # If multiple definitions exist
-    $target_function(args) =...
-    ... another function body...
+    # Recursively search in all arguments
+    for arg in node.args
+      append!(functions, get_function_definitions(arg))
     end
-    ```
+  end
 
-    If `$target_function` is not found, return an empty string.
-    """)
-  ]
-
-  analysis_call = AT.AIGenerate(config.schema, prompt; config.base_config...)
-  result = AT.run!(analysis_call)
-
-  # Validate the output:
-  # 1. Must contain the target function name
-  # 2. Must start with ``` and end with ```
-  # 3. Must be valid Julia syntax
-  AT.airetry!(x -> !isempty(AT.last_output(x)) && occursin(target_function, AT.last_output(x)) && startswith(strip(AT.last_output(x)), "```julia") && endswith(strip(AT.last_output(x)), "```"),
-    result,
-    "Your response should contain the function definition without any additional text and explanations! It should be between ```julia and ```")
-
-  return AT.last_output(result)
+  return functions
 end
+
+function get_function_calls(node)
+  calls = String[]
+
+  if node isa Expr
+    if node.head == :call
+      # Get the function name from the first argument
+      fname = string(node.args[1])
+      push!(calls, fname)
+    end
+
+    # Recursively search in all arguments
+    for arg in node.args
+      append!(calls, get_function_calls(arg))
+    end
+  end
+
+  return unique(calls)
+end
+
+
+function find_function_node(node, target_name)
+  if node isa Expr
+    if node.head == :function
+      current_fname = if node.args[1] isa Expr
+        string(node.args[1].args[1])
+      else
+        string(node.args[1])
+      end
+
+      if current_fname == target_name
+        return node
+      end
+    end
+
+    # Search recursively in all arguments
+    for arg in node.args
+      result = find_function_node(arg, target_name)
+      if result !== nothing
+        return result
+      end
+    end
+  end
+  return nothing
+end
+
 
 function get_function_dict(filepath::String)
   if !isfile(filepath)
@@ -179,43 +94,31 @@ function get_function_dict(filepath::String)
   end
 
   @info "Finding function definitions in $filepath"
-  config = get_ai_config()
-  output = get_func_names(content, config)
-  response = AT.last_output(output)
-  if isempty(response)
+
+  # Parse the code into a syntax tree
+  expr = JuliaSyntax.parseall(Expr, content)
+  function_names = get_function_definitions(expr)
+  if isempty(function_names)
     println("No functions found in $filepath")
   end
 
-  function_names = split(response, ",")
   function_names = [strip(f) for f in function_names]
-  function_names = unique(function_names)
+  # remove arguments from function names
+  function_names = [split(f, "(")[1] for f in function_names]
+  unique!(function_names)
 
   function_dict = Dict{String,Vector{String}}()
   for function_name in function_names
     function_dict[function_name] = []
   end
   
-  for target_function in function_names
-    @info "Analyzing function calls in $target_function"
-    # First get the function definition
-    func_def = get_func_definition(content, target_function, config)
-    # Then analyze calls within this definition
-    call_names = get_func_calls(func_def, target_function, config)
-    if !call_names.success
-      # try again
-      func_def = get_func_definition(content, target_function, config)
-      call_names = get_func_calls(func_def, target_function, config)
-    end
-    if !call_names.success
-      @warn "Failed to analyze function calls for $target_function"
-    else
-      # parse the response into a list of function names
-      response = AT.last_output(call_names)
-      call_names = split(response, ",")
-      call_names = [strip(f) for f in call_names]
-      call_names = unique(call_names)
-      function_dict[target_function] = call_names
-    end
+  for func_name in function_names
+      func_node = find_function_node(expr, func_name)
+      if func_node !== nothing
+          for call in get_function_calls(func_node.args[2])
+              function_dict[func_name] = [function_dict[func_name]..., call]
+          end
+      end
   end
 
   return function_dict
@@ -260,7 +163,7 @@ funcs = scan_julia_files_in_directory("src",
     include_external_functions=false)
 ```
 """
-function scan_julia_files_in_directory(directory::String; exclude_folders::Vector{String}=String[], include_external_functions::Bool=true,
+function scan_julia_files_in_directory(directory::String; exclude_folders::Vector{String}=String[], include_external_functions::Bool=false,
   save_to_file::Bool=true,
   create_diagram::Bool=true, exclude_files::Vector{String}=String[])
   functions = Dict{String,Vector{String}}()
@@ -290,6 +193,59 @@ function scan_julia_files_in_directory(directory::String; exclude_folders::Vecto
   end
 
   return functions
+end
+
+"""
+    scan_julia_file(filepath::String; 
+        include_external_functions::Bool=false,
+        save_to_file::Bool=true,
+        create_diagram::Bool=true) -> Dict{String,Vector{String}}
+
+Analyze function calls within a single Julia file.
+
+# Arguments
+- `filepath::String`: The Julia file to analyze
+- `include_external_functions::Bool`: If false, only keep function calls that are defined within the file
+- `save_to_file::Bool`: If true, save the results to "functions.json"
+- `create_diagram::Bool`: If true, create a UML diagram of the function calls
+
+# Returns
+A dictionary mapping function names to vectors of function names they call.
+
+# Example
+```julia
+# Analyze a single Julia file
+funcs = scan_julia_file("src/myfile.jl")
+```
+"""
+function scan_julia_file(filepath::String; 
+    include_external_functions::Bool=false,
+    save_to_file::Bool=true,
+    create_diagram::Bool=true)
+
+    file_name = basename(filepath)
+    
+    if !isfile(filepath) || !occursin(r"\.jl$", filepath)
+        error("Not a valid Julia file: $filepath")
+    end
+
+    functions = get_function_dict(filepath)
+
+    if !include_external_functions
+        filter_external_functions!(functions)
+    end
+
+    if save_to_file
+        open("functions_$(file_name).json", "w") do f
+            JSON.print(f, functions)
+        end
+    end
+
+    if create_diagram
+        create_uml_diagram(functions, filepath="code_diagram_$(file_name).uml")
+    end
+
+    return functions
 end
 
 end # module
