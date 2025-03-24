@@ -8,9 +8,6 @@ using YAML
 using Glob
 using JuliaSyntax
 
-PT = PromptingTools
-AT = PromptingTools.Experimental.AgentTools
-
 include("create_diagram.jl")
 include("aiconfig.jl")
 
@@ -25,6 +22,10 @@ function get_function_definitions(node)
       else
         string(node.args[1])
       end
+      push!(functions, fname)
+    elseif node.head == :(=) && length(node.args) == 2 && node.args[1] isa Expr && node.args[1].head == :call
+      # Handle inline function definitions (e.g., foo() = ...)
+      fname = string(node.args[1].args[1])
       push!(functions, fname)
     end
 
