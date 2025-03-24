@@ -5,6 +5,8 @@ This package is a tool for analyzing and visualizing Julia code bases. It provid
 
 This is useful for understanding the structure and dependencies of your Julia codebase. It can help developers identify complex relationships between functions, detect potential issues, and improve code organization.
 
+![UML Diagram of this package](https://github.com/kavir1698/CodeNavigator.jl/blob/main/code_diagram.png)
+
 Features
 --------
 - Static analysis of Julia function calls and definitions

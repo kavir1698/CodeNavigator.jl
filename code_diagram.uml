@@ -1,0 +1,56 @@
+@startuml
+state filter_external_functions_ {
+}
+state scan_julia_file {
+    state get_function_dict
+    state filter_external_functions_
+    state create_uml_diagram
+}
+state find_function_node {
+    state extract_function_name
+    state find_function_node
+}
+state get_function_calls {
+    state get_function_calls
+}
+state create_uml_diagram {
+    state clean_state_name
+    state save_uml_diagram
+}
+state scan_julia_files_in_directory {
+    state scan_julia_files_in_directory
+    state get_function_dict
+    state filter_external_functions_
+    state create_uml_diagram
+}
+state extract_function_name {
+}
+state get_function_dict {
+    state get_function_definitions
+    state find_function_node
+    state get_function_calls
+}
+state clean_state_name {
+}
+state save_uml_diagram {
+}
+state get_function_definitions {
+    state get_function_definitions
+}
+scan_julia_file --> get_function_dict
+scan_julia_file --> filter_external_functions_
+scan_julia_file --> create_uml_diagram
+find_function_node --> extract_function_name
+find_function_node --> find_function_node
+get_function_calls --> get_function_calls
+create_uml_diagram --> clean_state_name
+create_uml_diagram --> save_uml_diagram
+scan_julia_files_in_directory --> scan_julia_files_in_directory
+scan_julia_files_in_directory --> get_function_dict
+scan_julia_files_in_directory --> filter_external_functions_
+scan_julia_files_in_directory --> create_uml_diagram
+get_function_dict --> get_function_definitions
+get_function_dict --> find_function_node
+get_function_dict --> get_function_calls
+get_function_definitions --> get_function_definitions
+@enduml
