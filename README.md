@@ -54,3 +54,4 @@ The functions return a dictionary mapping function names to vectors of function 
 
 - JSON output is saved as "functions.json" (for directory scan) or "functions_filename.jl.json" (for single file)
 - UML diagrams are saved as "code_diagram.uml" or "code_diagram_filename.jl.uml"
+  - You can use a tool like [PlantUML](https://plantuml.com/) to render the UML diagram. For example, `plantuml code_diagram.uml` will generate a PNG file. For very large diagrams, use `plantuml -DPLANTUML_LIMIT_SIZE=8192 code_diagram.uml` to increase the size limit. Alternatively, you can use `-tsvg` to generate SVG file `plantuml -tsvg code_diagram.uml`.
