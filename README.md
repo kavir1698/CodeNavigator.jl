@@ -5,70 +5,52 @@ This package is a tool for analyzing and visualizing Julia code bases. It provid
 
 This is useful for understanding the structure and dependencies of your Julia codebase. It can help developers identify complex relationships between functions, detect potential issues, and improve code organization.
 
-How to use it
---------------
+Features
+--------
+- Static analysis of Julia function calls and definitions
+- Support for both regular and inline function definitions
+- Generation of function dependency diagrams in UML format
+- JSON output of function relationships
+- Single file or directory-wide analysis
 
-To use Code Navigator, simply include the package in your Julia project and call the `scan_julia_files_in_directory` function, passing in the directory you want to analyze.
+How to Use
+----------
 
-Here's a basic example:
+### Analyzing a Directory
 
 ```julia
 using CodeNavigator
 
+# Scan all Julia files in a directory
 functions = scan_julia_files_in_directory("src")
-```
 
-Advanced Usage
--------------
-
-The function supports several optional parameters for customizing the analysis:
-
-```julia
+# Scan with advanced options
 functions = scan_julia_files_in_directory(
     "src",
-    exclude_folders=["test", "docs"],  # Skip these folders during scanning
-    include_external_functions=false,   # Only show functions defined in your codebase
-    save_to_file=true,                 # Save results to "functions.json"
-    create_diagram=true,               # Generate UML diagram as "code_diagram.uml"
-    exclude_files=["generated.jl"]     # Skip specific files during scanning
+    exclude_folders=["test", "docs"],     # Skip these folders during scanning
+    include_external_functions=false,      # Only show functions defined in your codebase
+    save_to_file=true,                    # Save results to "functions.json"
+    create_diagram=true,                  # Generate UML diagram
+    exclude_files=["generated.jl"]        # Skip specific files
 )
 ```
 
-The function returns a dictionary mapping function names to vectors of function names they call, which can be used for further analysis.
+### Analyzing a Single File
 
-LLM Configuration
-----------------
-
-CodeNavigator uses Large Language Models for code analysis. You can configure the LLM settings using a `config.yml` file in your project root:
-
-```yaml
-model: qwen2.5-coder:14b    # Model name
-api_key: ""                 # API key (if using hosted services)
-base_url: http://127.0.0.1:11434  # URL for your LLM API
+```julia
+# Analyze a specific Julia file
+functions = scan_julia_file(
+    "src/myfile.jl",
+    include_external_functions=false,
+    save_to_file=true,
+    create_diagram=true
+)
 ```
 
-### Local Setup with Ollama
+Output
+------
 
-1. Install Ollama from https://ollama.ai
-2. Pull the Qwen model:
-```bash
-ollama pull qwen2.5-coder:14b
-```
-3. Start Ollama server
-4. Create `config.yml` in your project root with the above configuration
+The functions return a dictionary mapping function names to vectors of function names they call. Additionally:
 
-### Using Other LLMs
-
-You can use any LLM that's compatible with PromptingTools.jl. Simply update the `config.yml` with appropriate settings:
-
-```yaml
-# For OpenAI
-model: gpt-4
-api_key: your_api_key
-base_url: https://api.openai.com/v1
-
-# For Anthropic
-model: claude-3-opus
-api_key: your_api_key
-base_url: https://api.anthropic.com/v1
-```
+- JSON output is saved as "functions.json" (for directory scan) or "functions_filename.jl.json" (for single file)
+- UML diagrams are saved as "code_diagram.uml" or "code_diagram_filename.jl.uml"
