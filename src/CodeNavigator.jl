@@ -1,126 +1,151 @@
 module CodeNavigator
 
-export analyze_function_calls, scan_julia_files_in_directory, create_uml_diagram
+export get_function_dict, scan_julia_files_in_directory, create_uml_diagram, scan_julia_file
+export get_function_definitions, get_function_calls, scan_julia_file
 
-using CSTParser
 using JSON
+using YAML
+using Glob
+using JuliaSyntax
 
 include("create_diagram.jl")
 
-# TODO: handle function broadcasts f.()
-# TODO: remove dot . from broadcasted functions
-function analyze_function_calls(filepath::String)
+function get_function_definitions(node)
+  functions = String[]
+
+  if node isa Expr
+    if node.head == :function
+      # Get function name from the first argument
+      fname = if node.args[1] isa Expr
+        string(node.args[1].args[1])
+      else
+        string(node.args[1])
+      end
+      push!(functions, fname)
+    elseif node.head == :(=) && length(node.args) == 2 && node.args[1] isa Expr && node.args[1].head == :call
+      # Handle inline function definitions (e.g., foo() = ...)
+      fname = string(node.args[1].args[1])
+      push!(functions, fname)
+    end
+
+    # Recursively search in all arguments
+    for arg in node.args
+      append!(functions, get_function_definitions(arg))
+    end
+  end
+
+  return functions
+end
+
+function get_function_calls(node)
+  calls = String[]
+
+  if node isa Expr
+    if node.head == :call
+      # Get the function name from the first argument
+      fname = string(node.args[1])
+      push!(calls, fname)
+    elseif node.head == :(=) && length(node.args) == 2
+      # Handle both sides of assignment
+      if node.args[1] isa Expr && node.args[1].head == :call
+        # Handle inline function definition
+        rhs = node.args[2]
+        if rhs isa Expr
+          # Process the entire right-hand side for function calls
+          append!(calls, get_function_calls(rhs))
+        else
+          # Handle case where RHS is a direct function call (e.g., f = g)
+          push!(calls, string(rhs))
+        end
+      end
+      # Also check the left-hand side for any nested calls
+      append!(calls, get_function_calls(node.args[1]))
+    end
+
+    # Recursively search in all arguments
+    for arg in node.args
+      append!(calls, get_function_calls(arg))
+    end
+  end
+
+  return unique(calls)
+end
+
+function find_function_node(node, target_name)
+  if node isa Expr
+    if node.head == :function || (node.head == :(=) && length(node.args) == 2 && node.args[1] isa Expr && node.args[1].head == :call)
+      current_fname = if node.head == :function
+        if node.args[1] isa Expr
+          string(node.args[1].args[1])
+        else
+          string(node.args[1])
+        end
+      else
+        string(node.args[1].args[1])  # For inline function case
+      end
+
+      if current_fname == target_name
+        return node
+      end
+    end
+
+    # Search recursively in all arguments
+    for arg in node.args
+      result = find_function_node(arg, target_name)
+      if result !== nothing
+        return result
+      end
+    end
+  end
+  return nothing
+end
+
+
+function get_function_dict(filepath::String)
   if !isfile(filepath)
     error("File not found: $filepath")
   end
 
   content = read(filepath, String)
   if isempty(content)
-    # println("Warning: File is empty")
     return Dict{String,Vector{String}}()
   end
 
-  parsed = CSTParser.parse(content, true)
+  @info "Finding function definitions in $filepath"
 
-  functions = Dict{String,Vector{String}}()
-  current_function = nothing
-
-  function traverse(expr)
-    if CSTParser.defines_function(expr)
-      name = get_function_name(expr)
-      if name !== nothing
-        current_function = name
-        if haskey(functions, current_function)
-          functions[current_function] = vcat(functions[current_function], String[])  # Append to existing calls
-        else
-          functions[current_function] = String[]  # Create new list of calls
-        end
-        # println("Found function: $name")
-      else
-        # println("Function name not found for expression: $(typeof(expr))")
-        # println("Expression details: $(expr)")
-      end
-    elseif CSTParser.iscall(expr) && current_function !== nothing
-      call_name = get_call_name(expr)
-      if call_name !== nothing
-        push!(functions[current_function], call_name)
-        # println("Found call in $current_function: $call_name")
-      end
-    end
-
-    if expr.args !== nothing
-      for arg in expr.args
-        traverse(arg)
-      end
-    end
-  end
-
-  traverse(parsed)
-
-  if isempty(functions)
+  # Parse the code into a syntax tree
+  expr = JuliaSyntax.parseall(Expr, content)
+  function_names = get_function_definitions(expr)
+  if isempty(function_names)
     println("No functions found in $filepath")
   end
 
-  # Always remove self-references
-  for (func, calls) in functions
-    functions[func] = filter(c -> c != func, calls)
+  function_names = [strip(f) for f in function_names]
+  # remove arguments from function names
+  function_names = [split(f, "(")[1] for f in function_names]
+  unique!(function_names)
+
+  function_dict = Dict{String,Vector{String}}()
+  for function_name in function_names
+    function_dict[function_name] = []
   end
-
-  # Remove duplicates in calls
-  for (func, calls) in functions
-    functions[func] = unique(calls)
-  end
-
-  return functions
-end
-
-function get_function_name(expr)
-  # Check if expr is valid and has the necessary properties
-  if expr === nothing || !hasproperty(expr, :args) || expr.args === nothing
-    return nothing
-  end
-
-  # Check for the specific structure we're dealing with
-  if length(expr.args) >= 2 &&
-     hasproperty(expr.args[1], :head) &&
-     expr.args[1].head === :call
-
-    lhs = expr.args[1]  # The function call on the left-hand side of the assignment
-    if length(lhs.args) > 0 && CSTParser.isidentifier(lhs.args[1])
-      return lhs.args[1].val
-    end
-  end
-
-  # If not found, recursively search through the args
-  for arg in expr.args
-    name = get_function_name(arg)
-    if name !== nothing
-      return name
-    end
-  end
-
-  # Handle inline function definitions (with or without docstrings):
-  for arg in expr.args
-    if hasproperty(arg, :head) && hasproperty(arg.head, :val) && arg.head.val == "="
-      lhs = arg.args[1]  # Left-hand side of the assignment
-      if CSTParser.iscall(lhs) && length(lhs.args) > 0 && CSTParser.isidentifier(lhs.args[1])
-        return lhs.args[1].val
+  
+  for func_name in function_names
+      func_node = find_function_node(expr, func_name)
+      if func_node !== nothing
+          # Handle both regular and inline function definitions
+          body = if func_node.head == :function
+              func_node.args[2]
+          else  # inline function case
+              func_node.args[2]
+          end
+          for call in get_function_calls(body)
+              function_dict[func_name] = [function_dict[func_name]..., call]
+          end
       end
-    end
   end
 
-  return nothing
-end
-
-function get_call_name(expr)
-  if expr.args !== nothing && length(expr.args) >= 1
-    if CSTParser.isidentifier(expr.args[1])
-      return expr.args[1].val
-    elseif CSTParser.isoperator(expr.args[1])
-      return expr.args[1].val
-    end
-  end
-  return nothing
+  return function_dict
 end
 
 function filter_external_functions!(functions::Dict{String,Vector{String}})
@@ -130,9 +155,41 @@ function filter_external_functions!(functions::Dict{String,Vector{String}})
   end
 end
 
+"""
+    scan_julia_files_in_directory(directory::String; 
+        exclude_folders::Vector{String}=String[],
+        include_external_functions::Bool=true,
+        save_to_file::Bool=true,
+        create_diagram::Bool=true,
+        exclude_files::Vector{String}=String[]) -> Dict{String,Vector{String}}
+
+Recursively scan a directory for Julia files and analyze function calls within them.
+
+# Arguments
+- `directory::String`: The root directory to start scanning from
+- `exclude_folders::Vector{String}`: List of folder names to skip during scanning
+- `include_external_functions::Bool`: If false, only keep function calls that are defined within the scanned files
+- `save_to_file::Bool`: If true, save the results to "functions.json"
+- `create_diagram::Bool`: If true, create a UML diagram of the function calls
+- `exclude_files::Vector{String}`: List of file names to skip during scanning
+
+# Returns
+A dictionary mapping function names to vectors of function names they call.
+
+# Example
+```julia
+# Scan all Julia files in current directory
+funcs = scan_julia_files_in_directory(".")
+
+# Scan with exclusions
+funcs = scan_julia_files_in_directory("src", 
+    exclude_folders=["test", "docs"],
+    include_external_functions=false)
+```
+"""
 function scan_julia_files_in_directory(directory::String; exclude_folders::Vector{String}=String[], include_external_functions::Bool=false,
-  save_to_file::Bool=false,
-  create_diagram::Bool=false)
+  save_to_file::Bool=true,
+  create_diagram::Bool=true, exclude_files::Vector{String}=String[])
   functions = Dict{String,Vector{String}}()
 
   for file in readdir(directory, join=true)
@@ -140,8 +197,8 @@ function scan_julia_files_in_directory(directory::String; exclude_folders::Vecto
       if basename(file) ∉ exclude_folders
         merge!(functions, scan_julia_files_in_directory(file; exclude_folders=exclude_folders, include_external_functions=true))
       end
-    elseif occursin(r"\.jl$", file)
-      merge!(functions, analyze_function_calls(file))
+    elseif occursin(r"\.jl$", file) && basename(file) ∉ exclude_files
+      merge!(functions, get_function_dict(file))
     end
   end
 
@@ -160,6 +217,59 @@ function scan_julia_files_in_directory(directory::String; exclude_folders::Vecto
   end
 
   return functions
+end
+
+"""
+    scan_julia_file(filepath::String; 
+        include_external_functions::Bool=false,
+        save_to_file::Bool=true,
+        create_diagram::Bool=true) -> Dict{String,Vector{String}}
+
+Analyze function calls within a single Julia file.
+
+# Arguments
+- `filepath::String`: The Julia file to analyze
+- `include_external_functions::Bool`: If false, only keep function calls that are defined within the file
+- `save_to_file::Bool`: If true, save the results to "functions.json"
+- `create_diagram::Bool`: If true, create a UML diagram of the function calls
+
+# Returns
+A dictionary mapping function names to vectors of function names they call.
+
+# Example
+```julia
+# Analyze a single Julia file
+funcs = scan_julia_file("src/myfile.jl")
+```
+"""
+function scan_julia_file(filepath::String; 
+    include_external_functions::Bool=false,
+    save_to_file::Bool=true,
+    create_diagram::Bool=true)
+
+    file_name = basename(filepath)
+    
+    if !isfile(filepath) || !occursin(r"\.jl$", filepath)
+        error("Not a valid Julia file: $filepath")
+    end
+
+    functions = get_function_dict(filepath)
+
+    if !include_external_functions
+        filter_external_functions!(functions)
+    end
+
+    if save_to_file
+        open("functions_$(file_name).json", "w") do f
+            JSON.print(f, functions)
+        end
+    end
+
+    if create_diagram
+        create_uml_diagram(functions, filepath="code_diagram_$(file_name).uml")
+    end
+
+    return functions
 end
 
 end # module

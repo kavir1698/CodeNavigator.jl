@@ -1,21 +1,56 @@
 Code Navigator
 ===============
 
-NOTE: work in progress. There are bugs.
-
-This package is a tool for analyzing and visualizing Julia code. It provides a way to scan Julia files in a directory, analyze function calls, and create a UML diagram to visualize the relationships between functions. This is a static call graph.
+This package is a tool for analyzing and visualizing Julia code bases. It provides a way to scan Julia files in a directory, analyze function calls, and create a UML diagram to visualize the relationships between functions. This is a static call graph.
 
 This is useful for understanding the structure and dependencies of your Julia codebase. It can help developers identify complex relationships between functions, detect potential issues, and improve code organization.
 
-How to use it
---------------
+Features
+--------
+- Static analysis of Julia function calls and definitions
+- Support for both regular and inline function definitions
+- Generation of function dependency diagrams in UML format
+- JSON output of function relationships
+- Single file or directory-wide analysis
 
-To use Code Navigator, simply include the package in your Julia project and call the `scan_julia_files_in_directory` function, passing in the directory you want to analyze. You can also customize the analysis by specifying options such as excluding certain folders, including external functions, saving the results to a file, and creating a UML diagram.
+How to Use
+----------
 
-Here's an example:
+### Analyzing a Directory
 
 ```julia
 using CodeNavigator
 
-functions = scan_julia_files_in_directory("/path/to/directory", exclude_folders=String[], include_external_functions=false, save_to_file=false, create_diagram=true)
+# Scan all Julia files in a directory
+functions = scan_julia_files_in_directory("src")
+
+# Scan with advanced options
+functions = scan_julia_files_in_directory(
+    "src",
+    exclude_folders=["test", "docs"],     # Skip these folders during scanning
+    include_external_functions=false,      # Only show functions defined in your codebase
+    save_to_file=true,                    # Save results to "functions.json"
+    create_diagram=true,                  # Generate UML diagram
+    exclude_files=["generated.jl"]        # Skip specific files
+)
 ```
+
+### Analyzing a Single File
+
+```julia
+# Analyze a specific Julia file
+functions = scan_julia_file(
+    "src/myfile.jl",
+    include_external_functions=false,
+    save_to_file=true,
+    create_diagram=true
+)
+```
+
+Output
+------
+
+The functions return a dictionary mapping function names to vectors of function names they call. Additionally:
+
+- JSON output is saved as "functions.json" (for directory scan) or "functions_filename.jl.json" (for single file)
+- UML diagrams are saved as "code_diagram.uml" or "code_diagram_filename.jl.uml"
